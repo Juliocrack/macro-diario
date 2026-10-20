@@ -1,25 +1,59 @@
 {
   "expo": {
-    "name": "macro-diario",
+    "name": "Macro Diario",
     "slug": "macro-diario",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.julioarrieta.macrodiario"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B0D10",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.julioarrieta.macrodiario"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-sharing",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Macro Diario usa la cámara para fotografiar tus platillos y escanear códigos de barras.",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Macro Diario usa tus fotos para analizar platillos y guardar tu progreso.",
+          "cameraPermission": "Macro Diario usa la cámara para fotografiar tus platillos.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#FF7A2E"
+        }
+      ]
+    ],
+    "scheme": "macrodiario",
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
