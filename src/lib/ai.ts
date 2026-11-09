@@ -13,7 +13,7 @@ export const GEMINI_MODELS = [
 ];
 
 export class AiError extends Error {
-  code: 'no_key' | 'network' | 'quota' | 'auth' | 'parse' | 'blocked' | 'other';
+  code: 'no_key' | 'network' | 'quota' | 'auth' | 'parse' | 'blocked' | 'busy' | 'other';
   constructor(code: AiError['code'], msg: string) {
     super(msg);
     this.code = code;
@@ -33,29 +33,48 @@ async function call(prompt: string, images: Img[] = [], json = true, history: { 
       parts: [...images.map(i => ({ inline_data: { mime_type: i.mime || 'image/jpeg', data: i.base64 } })), { text: prompt }],
     },
   ];
-  let res: Response;
-  try {
-    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { temperature: json ? 0.2 : 0.6, ...(json ? { response_mime_type: 'application/json' } : {}) },
-      }),
-    });
-  } catch {
-    throw new AiError('network', 'Sin conexión. Revisa tu internet e intenta de nuevo.');
-  }
-  const body: any = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg: string = body?.error?.message ?? `Error ${res.status}`;
+  const body = JSON.stringify({
+    contents,
+    generationConfig: { temperature: json ? 0.2 : 0.6, ...(json ? { response_mime_type: 'application/json' } : {}) },
+  });
+  // Si el modelo elegido está saturado (503/500), reintenta y luego prueba los demás modelos
+  const order = [model, ...GEMINI_MODELS.map(m => m.id).filter(id => id !== model)];
+  let data: any = null;
+  let lastBusy = false;
+  for (let i = 0; i < order.length * 2 && !data; i++) {
+    const m = order[Math.floor(i / 2)];
+    if (i > 0) await new Promise(r => setTimeout(r, i % 2 ? 1500 : 300));
+    let res: Response;
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body,
+      });
+    } catch {
+      throw new AiError('network', 'Sin conexión. Revisa tu internet e intenta de nuevo.');
+    }
+    const j: any = await res.json().catch(() => null);
+    if (res.ok) {
+      data = j;
+      break;
+    }
+    const msg: string = j?.error?.message ?? `Error ${res.status}`;
+    if (res.status === 503 || res.status === 500 || /high demand|overloaded/i.test(msg)) {
+      lastBusy = true;
+      continue;
+    }
+    if (res.status === 404 && m !== model) continue; // ese modelo alterno no existe en tu cuenta
     if (res.status === 429) throw new AiError('quota', 'Se alcanzó el límite de uso de Gemini. Espera un minuto o revisa tu cuota en AI Studio.');
     if (res.status === 400 && /api key/i.test(msg)) throw new AiError('auth', 'La API key no es válida. Revísala en Más → Inteligencia artificial.');
     if (res.status === 403 || res.status === 401) throw new AiError('auth', 'La API key no tiene permiso para este modelo.');
-    if (res.status === 404) throw new AiError('other', `El modelo "${model}" no está disponible. Elige otro en Más → Inteligencia artificial.`);
+    if (res.status === 404) throw new AiError('other', `El modelo "${m}" no está disponible. Elige otro en Más → Inteligencia artificial.`);
     throw new AiError('other', msg);
   }
-  const cand = body?.candidates?.[0];
+  if (!data) {
+    throw new AiError('busy', lastBusy ? 'Los modelos de Gemini están saturados en este momento. Intenta de nuevo en unos minutos.' : 'No se pudo conectar con Gemini. Intenta de nuevo.');
+  }
+  const cand = data?.candidates?.[0];
   if (!cand) throw new AiError('blocked', 'Gemini no devolvió respuesta. Intenta con otra foto o descripción.');
   const text: string = (cand.content?.parts ?? [])
     .filter((p: any) => typeof p.text === 'string' && !p.thought)
