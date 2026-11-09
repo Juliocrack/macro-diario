@@ -7,7 +7,10 @@ import { migrate } from '@/db/schema';
 import { setDb } from '@/db';
 import { useTheme } from '@/theme';
 import { Loading } from '@/components/ui';
-import '@/lib/device'; // registra el manejador de notificaciones
+import { notificationsAvailable } from '@/lib/device';
+
+// Registra el manejador de notificaciones (no hace nada en Expo Go para Android)
+notificationsAvailable();
 
 async function init(db: SQLiteDatabase) {
   setDb(db);

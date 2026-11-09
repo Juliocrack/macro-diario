@@ -2,7 +2,8 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as Notifications from 'expo-notifications';
+import type * as NotificationsT from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
 import { Platform } from 'react-native';
 import { exportAll, importAll, type Reminders } from '@/db';
 
@@ -65,16 +66,34 @@ export async function shareCsv(name: string, rows: (string | number | null)[][])
 }
 
 // ---------- Notificaciones ----------
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
-});
+// expo-notifications se carga bajo demanda: Expo Go en Android ya no incluye su módulo nativo
+// y lo truena al importarlo. En el APK / development build funciona normal.
+let _notif: typeof NotificationsT | null | undefined;
+function notif(): typeof NotificationsT | null {
+  if (_notif !== undefined) return _notif;
+  if (Platform.OS === 'android' && isRunningInExpoGo()) return (_notif = null);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const N: typeof NotificationsT = require('expo-notifications');
+    N.setNotificationHandler({
+      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+    });
+    _notif = N;
+  } catch {
+    _notif = null;
+  }
+  return _notif;
+}
+/** false cuando se corre en Expo Go (Android), donde no hay notificaciones. */
+export const notificationsAvailable = () => notif() !== null;
+
 
 async function ensurePermission() {
+  const Notifications = notif();
+  if (!Notifications) return false;
   if (Platform.OS === 'android') {
-    /* eslint-disable import/namespace -- AndroidImportance sí se exporta (re-export de tipos) */
     await Notifications.setNotificationChannelAsync('default', { name: 'Recordatorios', importance: Notifications.AndroidImportance.HIGH });
     await Notifications.setNotificationChannelAsync('rest', { name: 'Descanso entre series', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 400, 200, 400] });
-    /* eslint-enable import/namespace */
   }
   const cur = await Notifications.getPermissionsAsync();
   if (cur.granted) return true;
@@ -88,6 +107,8 @@ const hhmm = (s: string) => {
 };
 
 async function daily(id: string, title: string, body: string, time: string) {
+  const Notifications = notif();
+  if (!Notifications) return;
   await Notifications.scheduleNotificationAsync({
     identifier: id,
     content: { title, body },
@@ -96,7 +117,9 @@ async function daily(id: string, title: string, body: string, time: string) {
 }
 
 /** Reprograma todos los recordatorios diarios según la configuración. */
-export async function applyReminders(r: Reminders) {
+export async function applyReminders(r: Reminders): Promise<boolean | 'unsupported'> {
+  const Notifications = notif();
+  if (!Notifications) return 'unsupported';
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const n of scheduled) if (n.identifier.startsWith('rem-')) await Notifications.cancelScheduledNotificationAsync(n.identifier);
   const any = r.meals || r.water || r.weigh || r.workout;
@@ -123,6 +146,8 @@ export async function applyReminders(r: Reminders) {
 let restId: string | null = null;
 export async function scheduleRestEnd(seconds: number, exercise: string) {
   await cancelRestEnd();
+  const Notifications = notif();
+  if (!Notifications) return;
   if (seconds < 5) return;
   if (!(await ensurePermission())) return;
   restId = await Notifications.scheduleNotificationAsync({
@@ -131,12 +156,15 @@ export async function scheduleRestEnd(seconds: number, exercise: string) {
   });
 }
 export async function cancelRestEnd() {
-  if (restId) {
+  const Notifications = notif();
+  if (restId && Notifications) {
     await Notifications.cancelScheduledNotificationAsync(restId).catch(() => {});
     restId = null;
   }
 }
 export async function scheduleFastEnd(atMs: number) {
+  const Notifications = notif();
+  if (!Notifications) return;
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const n of scheduled) if (n.identifier === 'fast-end') await Notifications.cancelScheduledNotificationAsync(n.identifier);
   if (atMs <= Date.now()) return;
@@ -148,5 +176,7 @@ export async function scheduleFastEnd(atMs: number) {
   });
 }
 export async function cancelFastEnd() {
+  const Notifications = notif();
+  if (!Notifications) return;
   await Notifications.cancelScheduledNotificationAsync('fast-end').catch(() => {});
 }

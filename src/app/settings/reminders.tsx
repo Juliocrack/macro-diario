@@ -22,7 +22,8 @@ export default function RemindersScreen() {
     try {
       await setSetting('reminders', r);
       const ok = await applyReminders(r);
-      Alert.alert(ok ? 'Recordatorios guardados' : 'Permiso denegado', ok ? 'Te avisaremos a las horas elegidas.' : 'Activa las notificaciones de Macro Diario en los ajustes del teléfono.');
+      if (ok === 'unsupported') Alert.alert('Guardado', 'Expo Go no permite notificaciones en Android. Los recordatorios funcionarán cuando instales el APK de la app.');
+      else Alert.alert(ok ? 'Recordatorios guardados' : 'Permiso denegado', ok ? 'Te avisaremos a las horas elegidas.' : 'Activa las notificaciones de Macro Diario en los ajustes del teléfono.');
     } finally {
       setSaving(false);
     }
